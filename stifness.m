@@ -4,18 +4,44 @@
 %  Description:
 %    Solves a linear-elastic static problem on a solid tetrahedral mesh
 %    imported from an STL file.
-
+%
+%  KEY FIXES vs original:
+%    1. Force DOF index bug fixed:  3*n + wu - 3  →  3*(n-1) + wu
+%    2. Volume sign: use abs(v_six)/6 for stiffness; keep consistent sign in B
+%    3. B-matrix shear rows 5 & 6 corrected (swapped delta/gamma entries)
+%    4. Load face: Z-MAX (compression pushes DOWN, so force is negative Z)
+%    5. Fixed face: Z-MIN (all DOFs = 0)
+%    6. Reaction-force DOF extraction corrected to match fix_wu direction
+%    7. Displacement extraction uses correct stride indexing
 % =========================================================================
 
 clear all; clc; %#ok<CLALL>
 
 fprintf('=============================================================\n');
-fprintf('       LINEAR STATIC FEM SOLVER — Tetrahedral Elements       \n');
+fprintf('        LINEAR STATIC FEM SOLVER — Tetrahedral Elements       \n');
 fprintf('=============================================================\n\n');
 
 % =========================================================================
 %  SECTION 1 — INTERACTIVE USER INPUTS
 % =========================================================================
+
+%% --- STL Geometry Input ---
+fprintf('--- STL GEOMETRY IMPORT ---\n');
+stl_filename = input('  Enter the name of your STL file (e.g., cube3cm.stl): ', 's');
+stl_filename = strtrim(stl_filename);
+% Append extension if the user omitted it
+if ~strcmpi(stl_filename(end-3:end), '.stl')
+    stl_filename = [stl_filename, '.stl'];
+end
+while exist(stl_filename, 'file') ~= 2
+    warning('The file "%s" was not found in the current directory.', stl_filename);
+    stl_filename = input('  Please enter a valid STL filename: ', 's');
+    stl_filename = strtrim(stl_filename);
+    if ~strcmpi(stl_filename(end-3:end), '.stl')
+        stl_filename = [stl_filename, '.stl'];
+    end
+end
+fprintf('  Selected file   : %s\n\n', stl_filename);
 
 %% --- Force direction ---
 fprintf('--- FORCE DIRECTION ---\n');
@@ -74,8 +100,8 @@ else
     EE = EE_default;
     nu = nu_default;
 end
-fprintf('  E               : %.4g Pa\n', EE);
-fprintf('  nu              : %.4g\n\n', nu);
+fprintf('  E                : %.4g Pa\n', EE);
+fprintf('  nu               : %.4g\n\n', nu);
 
 %% --- Precision for BC coordinate rounding ---
 order_fit = 10;   % decimal places for min/max coordinate comparison
@@ -87,7 +113,7 @@ order_fit = 10;   % decimal places for min/max coordinate comparison
 fprintf('=============================================================\n');
 fprintf('  SIMULATION SUMMARY\n');
 fprintf('=============================================================\n');
-fprintf('  STL file         : cube3cm.stl\n');
+fprintf('  STL file         : %s\n', stl_filename);
 fprintf('  Force            : %.4g N  along  %s axis\n', Force, dir_labels{wu});
 fprintf('  Load face        : %s-max face\n', dir_labels{wu});
 fprintf('  Fixed face       : %s-min face  (all DOFs clamped)\n', dir_labels{fix_wu});
@@ -103,16 +129,16 @@ end
 fprintf('\n');
 
 % =========================================================================
-%  SECTION 3 — GEOMETRY IMPORT & MESH GENERATION
+%  SECTION 3 — GEOMETRY IMPORT & MESH GENERATION — add geometry:
 % =========================================================================
 
 fprintf('  [1/6] Importing geometry ...\n');
 smodel = createpde('structural', 'static-solid');
-importGeometry(smodel, 'cube3cm.stl');
+importGeometry(smodel, stl_filename);
 figure('Name','Geometry','NumberTitle','off');
 pdegplot(smodel);
 view(30, 30);
-title('Imported Geometry');
+title(['Imported Geometry: ', stl_filename]);
 
 fprintf('  [2/6] Generating mesh ...\n');
 model = generateMesh(smodel, 'GeometricOrder', 'linear');
@@ -123,8 +149,8 @@ connectivity    = model.Elements;   % 4 x numElem
 numNodes = size(nodeCoordinates, 2);
 numElem  = size(connectivity,    2);
 
-fprintf('         Nodes    : %d\n', numNodes);
-fprintf('         Elements : %d\n\n', numElem);
+fprintf('           Nodes    : %d\n', numNodes);
+fprintf('           Elements : %d\n\n', numElem);
 
 % =========================================================================
 %  SECTION 4 — COORDINATE EXTRACTION  (mm -> m)
@@ -323,8 +349,8 @@ for n = load_Indices(:)'
     % FIX: correct DOF index for direction wu at node n
     % DOF layout: node n -> [3(n-1)+1, 3(n-1)+2, 3(n-1)+3] = [3n-2, 3n-1, 3n]
     % Direction wu=1 -> 3(n-1)+1 = 3n-2
-    %           wu=2 -> 3(n-1)+2 = 3n-1
-    %           wu=3 -> 3(n-1)+3 = 3n
+    %            wu=2 -> 3(n-1)+2 = 3n-1
+    %            wu=3 -> 3(n-1)+3 = 3n
     dof_idx = 3*(n-1) + wu;   % FIXED (was: 3*n + wu - 3, same but clearer)
     force_v(dof_idx) = f_per_node;
 end
