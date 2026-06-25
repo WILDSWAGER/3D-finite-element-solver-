@@ -26,7 +26,21 @@
 % =========================================================================
 
 clear all; clc; %#ok<CLALL>
-q=3
+fprintf('--- UNIT SYSTEM ---\n');
+fprintf('  1 -> mm  (q=3, multiply by 1e-3)\n');
+fprintf('  2 -> cm  (q=2, multiply by 1e-2)\n');
+fprintf('  3 -> m   (q=0, no scaling)\n');
+unit_choice = input('  STL coordinate unit (1/2/3): ');
+while ~ismember(unit_choice, [1 2 3])
+    unit_choice = input('  Enter 1, 2, or 3: ');
+end
+switch unit_choice
+    case 1; q = 3; unit_label = 'mm';
+    case 2; q = 2; unit_label = 'cm';
+    case 3; q = 0; unit_label = 'm';
+end
+fprintf('  Unit: %s  (scale factor: 1e-%d)\n\n', unit_label, q);
+%_______________________________________
 fprintf('=============================================================\n');
 fprintf('   NONLINEAR FEM SOLVER — Elastic 50A (T4 Tetrahedra)        \n');
 fprintf('=============================================================\n\n');
@@ -60,6 +74,9 @@ while ~ismember(wu, [1 2 3])
 end
 dir_labels = {'X','Y','Z'};
 
+
+
+
 %% --- Fixed face ---
 fprintf('\n--- FIXED FACE ---\n');
 fprintf('  0->Same as force  1->X-min  2->Y-min  3->Z-min\n');
@@ -74,6 +91,10 @@ if fix_wu == 0; fix_wu = wu; end
 fprintf('\n--- FORCE (N) ---\n');
 fprintf('  Negative = compression, Positive = tension.\n');
 Force = input('  Total force (N) [e.g. -25]: ');
+%% --- Area magnitude ---
+
+fprintf('\n--- cross section area (m^2) ---\n');
+AA = input('  cross section area (m^2) [e.g. -25]: ');
 
 %% --- Linear material (low-strain regime) ---
 fprintf('\n--- LINEAR MATERIAL PROPERTIES (strain < 10%%) ---\n');
@@ -88,6 +109,12 @@ else
     EE = 2.9e6;   % measured elastic modulus for Formlabs 50A (post-cured) [Pa]
     nu = 0.4;     % nearly incompressible elastomer
 end
+%________________________________________
+
+%% --- Show estimated strain immediately after E is known ---
+estimated_strain = abs(Force) / (AA * EE);
+
+fprintf('             = %.4g', estimated_strain);
 
 %% --- Hyperelastic model (high-strain regime, >= 10%) ---
 fprintf('\n--- HYPERELASTIC MODEL (strain >= 10%%) ---\n');
@@ -208,9 +235,9 @@ zconmatrix = zeros(4,numElem);
 for i = 1:numElem
     for j = 1:4
         nIdx = connectivity(j,i);
-        xconmatrix(j,i) = nodeCoordinates(1,nIdx)*1e-3;
-        yconmatrix(j,i) = nodeCoordinates(2,nIdx)*1e-3;
-        zconmatrix(j,i) = nodeCoordinates(3,nIdx)*1e-3;
+        xconmatrix(j,i) = nodeCoordinates(1,nIdx)*10.^(-q);
+        yconmatrix(j,i) = nodeCoordinates(2,nIdx)*10.^(-q);
+        zconmatrix(j,i) = nodeCoordinates(3,nIdx)*10.^(-q);
     end
 end
 
@@ -417,7 +444,7 @@ for step = 1:n_steps
         elem_regime = zeros(numElem,1);
 
         for jj = 1:numElem
-            eps_e = eps_elem(jj);
+            eps_e = eps_est_step;%eps_elem(jj);
 
             if eps_e < 0.10
                 D_e = D_lin;
@@ -588,25 +615,25 @@ colormap jet; cb3=colorbar;
 cb3.Label.String = 'Von Mises Stress (kPa)';
 title('Von Mises Stress'); view(30,30);
 
-%% Regime map
-figure('Name','Material Regime Map','NumberTitle','off');
-pdeplot3D(model,'ColorMapData',node_regime);
-colormap([ 0.18 0.36 0.80;
-           0.85 0.20 0.20]);
-cb4=colorbar;
-cb4.Ticks=[0 1];
-cb4.TickLabels={'Linear (< 10%)','Nonlinear (>= 10%)'};
-title('Material Regime: Linear vs Hyperelastic zones');
-view(30,30);
-
-%% Convergence plot
-figure('Name','NR Convergence','NumberTitle','off');
-semilogy(1:n_steps, conv_history, 'o-b','LineWidth',1.5,'MarkerFaceColor','b');
-hold on;
-yline(tol_res,'--r','LineWidth',1.2,'Label',sprintf('Tolerance %.1e',tol_res));
-xlabel('Load step'); ylabel('Relative residual');
-title('Newton-Raphson convergence per load step');
-grid on;
+% %% Regime map
+% figure('Name','Material Regime Map','NumberTitle','off');
+% pdeplot3D(model,'ColorMapData',node_regime);
+% colormap([ 0.18 0.36 0.80;
+%            0.85 0.20 0.20]);
+% cb4=colorbar;
+% cb4.Ticks=[0 1];
+% cb4.TickLabels={'Linear (< 10%)','Nonlinear (>= 10%)'};
+% title('Material Regime: Linear vs Hyperelastic zones');
+% view(30,30);
+%----------------------------------------------------------
+% %% Convergence plot
+% figure('Name','NR Convergence','NumberTitle','off');
+% semilogy(1:n_steps, conv_history, 'o-b','LineWidth',1.5,'MarkerFaceColor','b');
+% hold on;
+% yline(tol_res,'--r','LineWidth',1.2,'Label',sprintf('Tolerance %.1e',tol_res));
+% xlabel('Load step'); ylabel('Relative residual');
+% title('Newton-Raphson convergence per load step');
+% grid on;
 
 %% Data cursor on Z-disp figure
 dcm = datacursormode(gcf);
