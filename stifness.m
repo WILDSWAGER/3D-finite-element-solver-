@@ -193,9 +193,7 @@ D_matrix = c * ...
 
 fprintf('  [5/6] Assembling element stiffness matrices (parallel) ...\n');
 
-if isempty(gcp('nocreate'))
-    parpool('local', feature('numcores'));
-end
+
 
 k_matrix = cell(numElem, 1);
 
