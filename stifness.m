@@ -8,7 +8,8 @@
 %  KEY FIXES vs original:
 %    1. Force DOF index bug fixed:  3*n + wu - 3  →  3*(n-1) + wu
 %    2. Volume sign: use abs(v_six)/6 for stiffness; keep consistent sign in B
-%    3. B-matrix shear rows 5 & 6 corrected (swapped delta/gamma entries)
+%    3. B-matrix shear rows 5 & 6 corrected (swapped delta/gammay
+%  entries)
 %    4. Load face: Z-MAX (compression pushes DOWN, so force is negative Z)
 %    5. Fixed face: Z-MIN (all DOFs = 0)
 %    6. Reaction-force DOF extraction corrected to match fix_wu direction
@@ -24,6 +25,21 @@ fprintf('=============================================================\n\n');
 % =========================================================================
 %  SECTION 1 — INTERACTIVE USER INPUTS
 % =========================================================================
+
+%% --- Unit system and STL scale factor ---
+fprintf('--- UNIT SYSTEM ---\n');
+fprintf('  1 -> mm\n  2 -> cm\n  3 -> m\n');
+unit_choice = input('  Enter choice (1/2/3): ');
+switch unit_choice
+    case 1; q=3; unit_label='mm';
+    case 2; q=2; unit_label='cm';
+    case 3; q=0; unit_label='m';
+end
+fprintf('  Unit: %s\n\n',unit_label);
+
+fprintf('--- STL SCALE FACTOR ---\n');
+scale_stl = input('  Scale factor: ');
+fprintf('  scale_stl = %.6g\n\n',scale_stl);
 
 %% --- STL Geometry Input ---
 fprintf('--- STL GEOMETRY IMPORT ---\n');
@@ -156,7 +172,7 @@ fprintf('           Elements : %d\n\n', numElem);
 %  SECTION 4 — COORDINATE EXTRACTION  (mm -> m)
 % =========================================================================
 
-fprintf('  [3/6] Extracting element coordinates (mm -> m) ...\n');
+fprintf('  [3/6] Extracting element coordinates (scaled by unit/scale factor) ...\n');
 
 xconmatrix = zeros(4, numElem);
 yconmatrix = zeros(4, numElem);
@@ -165,11 +181,13 @@ zconmatrix = zeros(4, numElem);
 for i = 1:numElem
     for j = 1:4
         nodeIdx = connectivity(j, i);
-        xconmatrix(j, i) = nodeCoordinates(1, nodeIdx) * 1e-3;   % mm -> m
-        yconmatrix(j, i) = nodeCoordinates(2, nodeIdx) * 1e-3;
-        zconmatrix(j, i) = nodeCoordinates(3, nodeIdx) * 1e-3;
+        xconmatrix(j, i) = nodeCoordinates(1, nodeIdx) * scale_stl * 10^(-q);
+        yconmatrix(j, i) = nodeCoordinates(2, nodeIdx) * scale_stl * 10^(-q);
+        zconmatrix(j, i) = nodeCoordinates(3, nodeIdx) * scale_stl * 10^(-q);
     end
 end
+
+coords_m = nodeCoordinates * scale_stl * 10^(-q);   % numNodes-wise scaled coords, for patch plot
 
 % =========================================================================
 %  SECTION 5 — MATERIAL CONSTITUTIVE MATRIX  [D]
@@ -420,16 +438,28 @@ cb.Label.String = sprintf('Displacement u_%s  (mm)', lower(dir_labels{wu}));
 title(sprintf('Displacement in %s direction', dir_labels{wu}));
 view(30, 30);
 
-%% --- Plot: Z displacement (always shown for reference) ---
+%% --- Plot: Z displacement (always shown for reference), patch-based ---
 z_disp = total_disp(3:3:end);   % every 3rd DOF starting at index 3 = uz
 
+fprintf('  Building surface mesh for Z-displacement plot ...\n');
+all_faces = [connectivity([1 2 3],:)'; connectivity([1 2 4],:)'; ...
+             connectivity([1 3 4],:)'; connectivity([2 3 4],:)'];
+all_faces = sort(all_faces, 2);
+[~, ia, ic] = unique(all_faces, 'rows');
+face_counts = accumarray(ic, 1);
+surf_faces = all_faces(ia(face_counts==1), :);
+surf_verts = coords_m';
+
 figure('Name', 'Displacement — Z direction (reference)', 'NumberTitle','off');
-pdeplot3D(model, 'ColorMapData', z_disp * 1e3);
+patch('Vertices', surf_verts, 'Faces', surf_faces, ...
+      'FaceVertexCData', z_disp*1e3, 'FaceColor', 'interp', 'EdgeColor', 'none');
 colormap jet;
 cb2 = colorbar;
-cb2.Label.String = 'Displacement u_z  (mm)';
+cb2.Label.String = 'Displacement u_z (mm)';
 title('Z-displacement (reference)');
-view(30, 30);
+view(30, 30); axis equal tight;
+xlabel('X(m)'); ylabel('Y(m)'); zlabel('Z(m)');
+lighting gouraud; camlight;
 
 %% --- Von Mises stress (optional post-processing) ---
 fprintf('  Computing Von Mises stress ...\n');
